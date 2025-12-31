@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>智行巡航 - 补能助手</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --gas: #ef4444;
+            --ev: #10b981;
+            --dark: #1e293b;
+            --light: #f8fafc;
+            --glass: rgba(255, 255, 255, 0.9);
+            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; background: #e2e8f0; }
+
+        /* 地图容器 */
+        #container { width: 100%; height: 100%; z-index: 1; }
+
+        /* 登录/配置层 */
+        #auth-layer {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255,255,255,0.95); z-index: 999;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            padding: 20px; transition: opacity 0.3s;
+        }
+        .auth-card {
+            background: white; padding: 30px; border-radius: 20px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            width: 100%; max-width: 400px;
+        }
+        .auth-card h2 { margin-top: 0; color: var(--dark); text-align: center; }
+        .input-group { margin-bottom: 15px; }
+        .input-group label { display: block; margin-bottom: 5px; color: #64748b; font-size: 14px; }
+        .input-group input {
+            width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 10px;
+            font-size: 16px; outline: none; transition: border 0.2s;
+        }
+        .input-group input:focus { border-color: var(--primary); }
+        .btn-primary {
+            width: 100%; padding: 14px; background: var(--primary); color: white;
+            border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); transition: transform 0.1s;
+        }
+        .btn-primary:active { transform: scale(0.98); }
+
+        /* 顶部状态栏 */
+        .top-bar {
+            position: fixed; top: 15px; left: 15px; right: 15px; z-index: 10;
+            display: flex; justify-content: space-between; align-items: center;
+            pointer-events: none;
+        }
+        .status-badge {
+            background: var(--glass); backdrop-filter: blur(10px);
+            padding: 8px 16px; border-radius: 30px;
+            font-size: 13px; font-weight: 600; color: var(--dark);
+            box-shadow: var(--shadow); pointer-events: auto; display: flex; align-items: center; gap: 6px;
+        }
+        .pulse { width: 8px; height: 8px; background: #10b981; border-radius: 50%; box-shadow: 0 0 0 rgba(16, 185, 129, 0.4); animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); } 70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); } 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
+
+        /* 底部控制面板 */
+        .control-panel {
+            position: fixed; bottom: 30px; left: 15px; right: 15px; z-index: 10;
+            background: var(--glass); backdrop-filter: blur(12px);
+            padding: 15px 20px; border-radius: 20px;
+            box-shadow: var(--shadow);
+            display: flex; flex-direction: column; gap: 15px;
+        }
+        .range-wrap { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--dark); }
+        .range-wrap input { flex: 1; accent-color: var(--primary); }
+        .filter-group { display: flex; gap: 10px; }
+        .filter-btn {
+            flex: 1; padding: 10px; border: none; border-radius: 12px;
+            font-size: 14px; font-weight: 600; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; gap: 5px;
+            transition: all 0.2s; opacity: 0.6; filter: grayscale(1);
+        }
+        .filter-btn.active { opacity: 1; filter: grayscale(0); box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+        .filter-gas { background: #fee2e2; color: var(--gas); }
+        .filter-ev { background: #d1fae5; color: var(--ev); }
+
+        /* 详情弹窗 */
+        #detail-modal {
+            position: fixed; bottom: -100%; left: 0; width: 100%;
+            background: white; z-index: 20;
+            border-radius: 24px 24px 0 0;
+            padding: 25px;
+            box-shadow: 0 -5px 20px rgba(0,0,0,0.1);
+            transition: bottom 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        #detail-modal.show { bottom: 0; }
+        .modal-handle { width: 40px; height: 5px; background: #e2e8f0; border-radius: 10px; margin: 0 auto 20px auto; }
+        .place-name { font-size: 20px; font-weight: 700; color: var(--dark); margin-bottom: 5px; }
+        .place-info { font-size: 14px; color: #64748b; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+        .place-tag { font-size: 12px; padding: 2px 8px; border-radius: 4px; }
+        .tag-gas { background: #fee2e2; color: var(--gas); }
+        .tag-ev { background: #d1fae5; color: var(--ev); }
+        .nav-btn {
+            width: 100%; padding: 15px; background: #3b82f6; color: white;
+            border: none; border-radius: 15px; font-size: 16px; font-weight: 600;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            text-decoration: none;
+        }
+
+        /* 自定义Marker样式 */
+        .custom-marker {
+            width: 36px; height: 36px; background: white; border-radius: 50%;
+            display: flex; justify-content: center; align-items: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2); border: 2px solid white;
+            transition: transform 0.2s;
+        }
+        .marker-gas { background: var(--gas); color: white; }
+        .marker-ev { background: var(--ev); color: white; }
+        .marker-selected { transform: scale(1.3); z-index: 999 !important; border-color: var(--dark); }
+
+    </style>
+</head>
+<body>
+
+    <!-- 登录层 -->
+    <div id="auth-layer">
+        <div class="auth-card">
+            <h2>🌍 智行巡航</h2>
+            <p style="color:#64748b; text-align:center; margin-bottom:20px; font-size:13px;">请输入您的高德API Key启动服务</p>
+            <div class="input-group">
+                <label>Key (Web端 JSAPI)</label>
+                <input type="text" id="api-key" placeholder="例如: a3f8... (32位)">
+            </div>
+            <div class="input-group">
+                <label>安全密钥 (Security Code)</label>
+                <input type="text" id="sec-code" placeholder="例如: 82b... (32位)">
+            </div>
+            <button class="btn-primary" onclick="initApp()">启动引擎</button>
+            <p style="font-size:12px; color:#94a3b8; text-align:center; margin-top:15px;">
+                Key仅保存在您的浏览器本地缓存中
+            </p>
+        </div>
+    </div>
+
+    <!-- 地图 -->
+    <div id="container"></div>
+
+    <!-- 顶部状态 -->
+    <div class="top-bar">
+        <div class="status-badge" id="app-reset" onclick="clearKeys()" style="cursor:pointer">
+            ⚙️ 设置
+        </div>
+        <div class="status-badge">
+            <div class="pulse"></div>
+            <span id="gps-status">定位中...</span>
+        </div>
+    </div>
+
+    <!-- 底部控制 -->
+    <div class="control-panel">
+        <div class="range-wrap">
+            <span>🔍 搜索半径: <span id="radius-val">3</span> km</span>
+            <input type="range" id="radius-range" min="1" max="10" value="3" step="0.5">
+        </div>
+        <div class="filter-group">
+            <button class="filter-btn filter-gas active" id="btn-gas" onclick="toggleFilter('gas')">
+                ⛽ 加油站
+            </button>
+            <button class="filter-btn filter-ev active" id="btn-ev" onclick="toggleFilter('ev')">
+                ⚡ 充电桩
+            </button>
+        </div>
+    </div>
+
+    <!-- 详情弹窗 -->
+    <div id="detail-modal">
+        <div class="modal-handle"></div>
+        <div id="modal-content">
+            <!-- 动态填充 -->
+        </div>
+    </div>
+
+    <script>
+        // 核心配置状态
+        const state = {
+            key: localStorage.getItem('amap_key') || '',
+            securityCode: localStorage.getItem('amap_sec') || '',
+            map: null,
+            userMarker: null,
+            placeSearch: null,
+            currentLat: null,
+            currentLng: null,
+            radius: 3000, // 米
+            filters: { gas: true, ev: true },
+            markers: [],
+            isMapLoaded: false
+        };
+
+        // DOM 元素
+        const els = {
+            authLayer: document.getElementById('auth-layer'),
+            apiKeyInput: document.getElementById('api-key'),
+            secCodeInput: document.getElementById('sec-code'),
+            radiusRange: document.getElementById('radius-range'),
+            radiusVal: document.getElementById('radius-val'),
+            gpsStatus: document.getElementById('gps-status'),
+            detailModal: document.getElementById('detail-modal'),
+            modalContent: document.getElementById('modal-content')
+        };
+
+        // 初始化判断
+        if (state.key && state.securityCode) {
+            els.apiKeyInput.value = state.key;
+            els.secCodeInput.value = state.securityCode;
+            // 自动登录但给一点延迟让用户反应
+            setTimeout(initApp, 500);
+        }
+
+        function clearKeys() {
+            localStorage.removeItem('amap_key');
+            localStorage.removeItem('amap_sec');
+            location.reload();
+        }
+
+        // 启动应用
+        function initApp() {
+            const k = els.apiKeyInput.value.trim();
+            const s = els.secCodeInput.value.trim();
+
+            if (!k || !s) {
+                alert('请填写完整的高德 Key 和 安全密钥');
+                return;
+            }
+
+            // 保存
+            localStorage.setItem('amap_key', k);
+            localStorage.setItem('amap_sec', s);
+            state.key = k;
+            state.securityCode = s;
+
+            // 隐藏登录层
+            els.authLayer.style.opacity = '0';
+            setTimeout(() => els.authLayer.style.display = 'none', 300);
+
+            // 注入高德安全配置
+            window._AMapSecurityConfig = { securityJsCode: state.securityCode };
+
+            // 动态加载高德脚本
+            loadAMapScript();
+        }
+
+        function loadAMapScript() {
+            if (state.isMapLoaded) return;
+            const script = document.createElement('script');
+            script.src = `https://webapi.amap.com/maps?v=2.0&key=${state.key}&plugin=AMap.PlaceSearch,AMap.Geolocation,AMap.MoveAnimation`;
+            script.onload = initMap;
+            script.onerror = () => { alert('地图加载失败，请检查Key是否正确'); location.reload(); };
+            document.body.appendChild(script);
+        }
+
+        function initMap() {
+            state.isMapLoaded = true;
+
+            // 创建地图实例
+            state.map = new AMap.Map('container', {
+                resizeEnable: true,
+                zoom: 15,
+                mapStyle: 'amap://styles/whitesmoke', // 浅色清新风格
+                pitch: 45, // 3D视角
+                viewMode: '3D'
+            });
+
+            // 点击地图关闭弹窗
+            state.map.on('click', () => {
+                els.detailModal.classList.remove('show');
+                resetMarkerStyles();
+            });
+
+            // 初始化定位
+            const geolocation = new AMap.Geolocation({
+                enableHighAccuracy: true,
+                timeout: 10000,
+                zoomToAccuracy: false,
+                buttonPosition: 'RB'
+            });
+
+            state.map.addControl(geolocation);
+            
+            // 实时监听位置
+            geolocation.watchPosition();
+            AMap.event.addListener(geolocation, 'complete', onLocationSuccess);
+            AMap.event.addListener(geolocation, 'error', (err) => {
+                els.gpsStatus.innerText = "GPS信号弱";
+                console.error(err);
+            });
+            
+            // 绑定范围滑块事件
+            els.radiusRange.addEventListener('input', (e) => {
+                const km = e.target.value;
+                state.radius = km * 1000;
+                els.radiusVal.innerText = km;
+                refreshData(); // 拖动时刷新数据
+            });
+        }
+
+        // 节流处理搜索，避免API调用过频
+        let lastSearchTime = 0;
+        function onLocationSuccess(data) {
+            els.gpsStatus.innerText = "正在巡航";
+            state.currentLat = data.position.getLat();
+            state.currentLng = data.position.getLng();
+
+            // 更新或创建用户Marker
+            if (!state.userMarker) {
+                state.userMarker = new AMap.Marker({
+                    map: state.map,
+                    position: data.position,
+                    content: `<div style="width:20px;height:20px;background:#2563eb;border-radius:50%;border:3px solid white;box-shadow:0 0 10px rgba(37,99,235,0.5);"></div>`,
+                    offset: new AMap.Pixel(-10, -10),
+                    zIndex: 100
+                });
+                state.map.setCenter(data.position);
+            } else {
+                state.userMarker.setPosition(data.position);
+                // 只有当距离过远或首次时才重置视角
+                // state.map.setCenter(data.position); // 可以选择是否强行跟随
+            }
+
+            // 每隔一定时间或距离刷新周边（这里简单用时间节流：10秒）
+            const now = Date.now();
+            if (now - lastSearchTime > 10000) {
+                refreshData();
+                lastSearchTime = now;
+            }
+        }
+
+        // 刷新数据逻辑
+        function refreshData() {
+            if (!state.currentLat || !state.currentLng) return;
+
+            // 清除旧点
+            state.map.remove(state.markers);
+            state.markers = [];
+
+            // 构造搜索中心
+            const center = new AMap.LngLat(state.currentLng, state.currentLat);
+
+            // 并行搜索
+            if (state.filters.gas) searchByType('加油站', center);
+            if (state.filters.ev) searchByType('充电站', center);
+        }
+
+        function searchByType(keyword, center) {
+            const placeSearch = new AMap.PlaceSearch({
+                type: keyword,
+                pageSize: 20, // 每页最多
+                pageIndex: 1,
+                extensions: 'base' // 不需要太详细，省流量
+            });
+
+            placeSearch.searchNearBy('', center, state.radius, (status, result) => {
+                if (status === 'complete' && result.info === 'OK') {
+                    renderMarkers(result.poiList.pois, keyword);
+                }
+            });
+        }
+
+        function renderMarkers(pois, type) {
+            const isGas = type === '加油站';
+            
+            pois.forEach(poi => {
+                // 创建自定义内容
+                const contentDiv = document.createElement('div');
+                contentDiv.className = `custom-marker ${isGas ? 'marker-gas' : 'marker-ev'}`;
+                // SVG 图标
+                contentDiv.innerHTML = isGas 
+                    ? `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 22v-8a2 2 0 0 1 2-2h2.5a2 2 0 0 1 2 2v8M18 20a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM14 2h2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2h0a2 2 0 0 0 2-2V4a2 2 0 0 1 2-2h0v5h-6V2z"/></svg>`
+                    : `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>`;
+
+                const marker = new AMap.Marker({
+                    map: state.map,
+                    position: [poi.location.lng, poi.location.lat],
+                    content: contentDiv,
+                    offset: new AMap.Pixel(-18, -18),
+                    extData: { poi: poi, type: type }
+                });
+
+                marker.on('click', (e) => {
+                    // 样式复位
+                    resetMarkerStyles();
+                    // 高亮当前
+                    e.target.getContent().classList.add('marker-selected');
+                    // 显示详情
+                    showDetail(poi, type);
+                });
+
+                state.markers.push(marker);
+            });
+        }
+
+        function resetMarkerStyles() {
+            state.markers.forEach(m => {
+                const div = m.getContent();
+                if(div) div.classList.remove('marker-selected');
+            });
+        }
+
+        function showDetail(poi, type) {
+            const isGas = type === '加油站';
+            const distance = AMap.GeometryUtil.distance(
+                [state.currentLng, state.currentLat], 
+                [poi.location.lng, poi.location.lat]
+            );
+
+            const html = `
+                <div class="place-name">${poi.name}</div>
+                <div class="place-info">
+                    <span class="place-tag ${isGas ? 'tag-gas' : 'tag-ev'}">${type}</span>
+                    <span>📍 距离 ${(distance/1000).toFixed(1)} km</span>
+                </div>
+                <div style="font-size:13px; color:#64748b; margin-bottom:20px; line-height:1.5;">
+                    ${poi.address || '暂无详细地址'}
+                </div>
+                <a href="https://uri.amap.com/marker?position=${poi.location.lng},${poi.location.lat}&name=${encodeURIComponent(poi.name)}" 
+                   class="nav-btn" target="_blank">
+                   🚀 立即导航
+                </a>
+            `;
+            
+            els.modalContent.innerHTML = html;
+            els.detailModal.classList.add('show');
+        }
+
+        // 筛选切换
+        function toggleFilter(type) {
+            state.filters[type] = !state.filters[type];
+            document.getElementById(`btn-${type}`).classList.toggle('active', state.filters[type]);
+            refreshData();
+        }
+
+    </script>
+</body>
+</html>
